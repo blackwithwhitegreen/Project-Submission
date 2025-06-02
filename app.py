@@ -73,10 +73,12 @@ def render_pdf_page(pdf_bytes, page_number):
 def main():
     st.title("VectorAsk")
     st.write("Get answers with source page images!")
-    
+
     # Initialize session states
     if 'pdf_bytes' not in st.session_state:
         st.session_state.pdf_bytes = None
+    if 'history' not in st.session_state:
+        st.session_state.history = []
 
     mode = st.radio("Select answer source:",
                     ("PDF Content", "Text input"),
@@ -96,39 +98,44 @@ def main():
                 st.session_state['qa_chain'] = create_qa_chain(vectorstore)
 
     question = st.text_input("Enter your question:")
-    
+
     if question:
         with st.spinner("Generating answer..."):
             if mode == "General Knowledge":
                 if 'general_pipe' not in st.session_state:
                     st.session_state.general_pipe = initialize_general_model()
-                
+
                 result = st.session_state.general_pipe(
                     question,
                     max_length=256,
                     temperature=0
                 )[0]['generated_text']
-                
+
                 st.subheader("Answer:")
                 st.write(result)
                 st.info("This answer is generated from the model's general knowledge")
+
                 
+                st.session_state.history.append({"question": question, "answer": result})
+
             elif mode == "PDF Content":
                 if 'qa_chain' not in st.session_state:
                     st.warning("Please upload a PDF file first!")
                     return
-                
+
                 result = st.session_state['qa_chain']({"query": question})
-                
-                # Display answer
+
+                answer = result["result"]
                 st.subheader("Answer:")
-                st.write(result["result"])
+                st.write(answer)
+
                 
-                # Display source documents with images
+                st.session_state.history.append({"question": question, "answer": answer})
+
+                
                 st.subheader("Source Evidence:")
                 for doc in result["source_documents"]:
                     page_num = doc.metadata['page']
-                    
                     col1, col2 = st.columns([2, 3])
                     with col1:
                         try:
@@ -136,12 +143,19 @@ def main():
                             st.image(img, caption=f"Page {page_num + 1}", use_column_width=True)
                         except Exception as e:
                             st.error(f"Error rendering page: {str(e)}")
-                    
+
                     with col2:
                         st.write(f"**Page {page_num + 1} Content:**")
                         st.write(doc.page_content)
-                    
                     st.write("---")
+
+    
+    with st.expander(" Show Q&A History"):
+        for idx, pair in enumerate(reversed(st.session_state.history)):
+            st.markdown(f"**Q{len(st.session_state.history) - idx}:** {pair['question']}")
+            st.markdown(f"**A:** {pair['answer']}")
+            st.markdown("---")
+
 
 if __name__ == "__main__":
     main()
